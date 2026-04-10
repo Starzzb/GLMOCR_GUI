@@ -9,9 +9,12 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QLabel,
+    QApplication,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QMimeData
+from PyQt5.QtGui import QImage, QPixmap
 from pathlib import Path
+import tempfile
 
 from ui.drop_area import DropArea
 from ui.result_viewer import ResultViewer
@@ -41,8 +44,41 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.recognizer = GLMRecognizer()
         self._current_result = None
+        self._temp_files = []
         self._init_ui()
         self._init_styles()
+        self._init_clipboard_listener()
+
+    def _init_clipboard_listener(self):
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_V and event.modifiers() == Qt.ControlManager:
+            self._paste_image()
+        else:
+            super().keyPressEvent(event)
+
+    def _paste_image(self):
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+
+        if mime_data.hasImage():
+            image = clipboard.image()
+            if not image.isNull():
+                temp_path = tempfile.mktemp(suffix=".png")
+                image.save(temp_path)
+                self._temp_files.append(temp_path)
+                self._update_status("已从剪贴板粘贴图片")
+                self._start_recognition(temp_path)
+                return True
+        elif mime_data.hasUrls():
+            urls = mime_data.urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                self._update_status(f"已从剪贴板粘贴: {Path(file_path).name}")
+                self._start_recognition(file_path)
+                return True
+        return False
 
     def _init_ui(self):
         self.setWindowTitle("GLM-OCR 拖拽识别工具")
@@ -61,13 +97,15 @@ class MainWindow(QMainWindow):
         btn_layout = QVBoxLayout()
         self.btn_browse = QPushButton("浏览文件")
         self.btn_browse.clicked.connect(self._browse_file)
+        self.btn_paste = QPushButton("粘贴图片")
+        self.btn_paste.clicked.connect(self._paste_image)
         self.btn_clear = QPushButton("清空")
         self.btn_clear.clicked.connect(self._clear_result)
         self.btn_export = QPushButton("导出结果")
         self.btn_export.clicked.connect(self._export_result)
         self.btn_export.setEnabled(False)
 
-        for btn in [self.btn_browse, self.btn_clear, self.btn_export]:
+        for btn in [self.btn_browse, self.btn_paste, self.btn_clear, self.btn_export]:
             btn.setFixedHeight(40)
             btn_layout.addWidget(btn)
         btn_layout.addStretch()
