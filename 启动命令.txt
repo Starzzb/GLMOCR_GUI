@@ -1,0 +1,16 @@
+GLM-OCR GUI 启动说明
+=====================
+
+方式一：双击运行
+  双击「启动.bat」即可自动创建虚拟环境并启动
+
+方式二：手动运行
+  cd glm_ocr_gui
+  .venv\Scripts\python.exe main.py
+
+前提：
+  - 已安装 uv: pip install uv
+  - Ollama 服务需运行中 (localhost:11434)
+  - 已下载 glm-ocr 模型: olam pull glm-ocr:latest
+
+支持格式：.jpg, .jpeg, .png, .pdf
