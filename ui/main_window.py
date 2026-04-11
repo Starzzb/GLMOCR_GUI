@@ -256,7 +256,8 @@ class MainWindow(QMainWindow):
         self.btn_copy.setEnabled(True)
 
     def _show_result(self, result: dict):
-        self.result_view.set_result(result["markdown"])
+        current_mode = self.result_view._current_mode
+        self.result_view.set_result(result["markdown"], mode=current_mode)
 
     def _on_recognition_error(self, error_msg: str):
         self.progress.setVisible(False)

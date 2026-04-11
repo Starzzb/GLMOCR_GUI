@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import QTextEdit
 from PyQt5.QtGui import QTextCursor
+import markdown
 
 
 class ResultViewer(QTextEdit):
@@ -36,8 +37,6 @@ class ResultViewer(QTextEdit):
     def get_current_text(self) -> str:
         if self._current_mode == self.MODE_PLAIN:
             return self._extract_plain_text(self._raw_text)
-        elif self._current_mode == self.MODE_MARKDOWN:
-            return self._raw_text
         else:
             return self._raw_text
 
@@ -51,89 +50,115 @@ class ResultViewer(QTextEdit):
 
     def _render_plain(self):
         plain_text = self._extract_plain_text(self._raw_text)
+        self.clear()
         self.setPlainText(plain_text)
 
     def _render_raw(self):
+        self.clear()
         self.setPlainText(self._raw_text)
 
     def _render_markdown(self):
-        cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        formatted = self._format_markdown(self._raw_text)
-        cursor.insertHtml(formatted)
+        self.clear()
+        html = markdown.markdown(
+            self._raw_text, extensions=["extra", "codehilite", "tables", "fenced_code"]
+        )
+        styled_html = self._wrap_with_styles(html)
+        self.setHtml(styled_html)
+
+    def _wrap_with_styles(self, html_content: str) -> str:
+        return f"""
+        <html>
+        <head>
+        <style>
+            body {{
+                font-family: Consolas, 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.6;
+                color: #333;
+            }}
+            h1, h2, h3, h4, h5, h6 {{
+                color: #222;
+                margin-top: 20px;
+                margin-bottom: 10px;
+            }}
+            h1 {{ border-bottom: 2px solid #ddd; padding-bottom: 8px; }}
+            h2 {{ border-bottom: 1px solid #eee; padding-bottom: 5px; }}
+            p {{ margin: 10px 0; }}
+            code {{
+                background: #f4f4f4;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-family: Consolas, 'Courier New', monospace;
+            }}
+            pre {{
+                background: #f4f4f4;
+                padding: 15px;
+                border-radius: 5px;
+                overflow-x: auto;
+                border: 1px solid #ddd;
+            }}
+            pre code {{
+                background: none;
+                padding: 0;
+            }}
+            blockquote {{
+                border-left: 4px solid #ddd;
+                margin: 10px 0;
+                padding-left: 15px;
+                color: #666;
+            }}
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin: 10px 0;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }}
+            th {{
+                background: #f4f4f4;
+            }}
+            ul, ol {{
+                margin: 10px 0;
+                padding-left: 25px;
+            }}
+            li {{
+                margin: 5px 0;
+            }}
+            img {{
+                max-width: 100%;
+                height: auto;
+            }}
+            hr {{
+                border: none;
+                border-top: 1px solid #ddd;
+                margin: 20px 0;
+            }}
+        </style>
+        </head>
+        <body>
+        {html_content}
+        </body>
+        </html>
+        """
 
     def _extract_plain_text(self, text: str) -> str:
+        html = markdown.markdown(text, extensions=["fenced_code"])
         import re
 
-        text = re.sub(r"```[\s\S]*?```", "", text)
-        text = re.sub(r"`[^`]+`", "", text)
-        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-        text = re.sub(r"\*([^*]+)\*", r"\1", text)
-        text = re.sub(r"#{1,6}\s+", "", text)
-        text = re.sub(r"[-*]\s+", "", text)
-        text = re.sub(r"\d+\.\s+", "", text)
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-        lines = text.split("\n")
+        html = re.sub(r"<pre[^>]*>.*?</pre>", "", html, flags=re.DOTALL)
+        html = re.sub(r"<code[^>]*>.*?</code>", "", html, flags=re.DOTALL)
+        html = re.sub(r"<[^>]+>", "", html)
+        html = re.sub(r"&nbsp;", " ", html)
+        html = re.sub(r"&amp;", "&", html)
+        html = re.sub(r"&lt;", "<", html)
+        html = re.sub(r"&gt;", ">", html)
+        lines = html.split("\n")
         result = []
         for line in lines:
             line = line.strip()
-            if line and not line.startswith("|"):
+            if line:
                 result.append(line)
         return "\n".join(result)
-
-    def _format_markdown(self, text: str) -> str:
-        import re
-
-        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-        lines = text.split("\n")
-        html_lines = []
-
-        in_code_block = False
-        code_content = []
-
-        for line in lines:
-            if line.startswith("```"):
-                if not in_code_block:
-                    in_code_block = True
-                    code_content = [line[3:]]
-                else:
-                    html_lines.append(
-                        f'<pre style="background:#f4f4f4;padding:10px;border-radius:4px;"><code>{"<br>".join(code_content)}</code></pre>'
-                    )
-                    in_code_block = False
-                    code_content = []
-                continue
-
-            if in_code_block:
-                code_content.append(line)
-                continue
-
-            if line.startswith("# "):
-                html_lines.append(
-                    f'<h1 style="color:#333;border-bottom:1px solid #eee;padding-bottom:5px;">{line[2:]}</h1>'
-                )
-            elif line.startswith("## "):
-                html_lines.append(f'<h2 style="color:#555;">{line[3:]}</h2>')
-            elif line.startswith("### "):
-                html_lines.append(f'<h3 style="color:#666;">{line[4:]}</h3>')
-            elif line.startswith("- ") or line.startswith("* "):
-                html_lines.append(f'<li style="margin-left:20px;">{line[2:]}</li>')
-            elif re.match(r"^\d+\.\s", line):
-                match = re.match(r"^(\d+)\.\s(.*)", line)
-                if match:
-                    num, content = match.groups()
-                    html_lines.append(f'<li style="margin-left:20px;">{content}</li>')
-            elif line.strip() == "":
-                html_lines.append("<br>")
-            else:
-                line = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", line)
-                line = re.sub(r"\*(.*?)\*", r"<i>\1</i>", line)
-                line = re.sub(
-                    r"`(.*?)`",
-                    r'<code style="background:#f4f4f4;padding:2px 4px;border-radius:3px;">\1</code>',
-                    line,
-                )
-                html_lines.append(f'<p style="margin:5px 0;">{line}</p>')
-
-        return "".join(html_lines)
