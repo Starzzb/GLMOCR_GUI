@@ -1,6 +1,7 @@
 import re
 import base64
 import io
+import warnings
 import matplotlib
 
 matplotlib.use("Agg")
@@ -10,20 +11,46 @@ import matplotlib.pyplot as plt
 
 
 class LaTeXRenderer:
+    _latex_available = None
+    _checked = False
+
+    @classmethod
+    def _check_latex_available(cls) -> bool:
+        if cls._checked:
+            return cls._latex_available or False
+        cls._checked = True
+
+        try:
+            testfig = plt.figure(figsize=(0.5, 0.5), dpi=50)
+            ax = testfig.add_subplot(111)
+            ax.text(0.5, 0.5, "$x$", fontsize=8, ha="center", va="center", usetex=True)
+            plt.tight_layout()
+            plt.savefig(io.BytesIO(), format="png", dpi=50)
+            plt.close(testfig)
+            cls._latex_available = True
+            return True
+        except Exception:
+            cls._latex_available = False
+            return False
+
     @classmethod
     def render_latex_to_base64(cls, latex: str, fontsize: int = 16) -> str:
+        latex = latex.strip()
+        if not latex:
+            return None
+
         try:
-            fig = plt.figure(figsize=(len(latex) * 0.1 + 0.5, 0.5), dpi=100)
+            fig = plt.figure(figsize=(len(latex) * 0.08 + 0.5, 0.5), dpi=100)
             ax = fig.add_subplot(111)
-            ax.text(
-                0.5,
-                0.5,
-                f"${latex}$",
-                fontsize=fontsize,
-                ha="center",
-                va="center",
-                usetex=True,
+
+            use_latex = (
+                cls._check_latex_available()
+                if cls._latex_available is None
+                else cls._latex_available
             )
+
+            ax.text(0.5, 0.5, f"${latex}$", fontsize=fontsize, ha="center", va="center")
+
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
             ax.axis("off")
@@ -44,18 +71,26 @@ class LaTeXRenderer:
             img_base64 = base64.b64encode(buf.read()).decode("utf-8")
             return f"data:image/png;base64,{img_base64}"
         except Exception as e:
-            print(f"LaTeX render error: {e}")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    plt.close(fig)
+                except Exception:
+                    pass
             return None
 
     @classmethod
     def extract_latex_blocks(cls, text: str) -> list:
+        if not text:
+            return []
+
         blocks = []
 
         pattern = r"\$\$([\s\S]+?)\$\$"
         matches = re.finditer(pattern, text)
         for match in matches:
             latex = match.group(1).strip()
-            if latex:
+            if latex and len(latex) > 1:
                 blocks.append(
                     {
                         "type": "display",
@@ -65,11 +100,11 @@ class LaTeXRenderer:
                     }
                 )
 
-        pattern = r"(?<!\$)\$([^\$\n]+?)\$(?!\$)"
+        pattern = r"(?<!\$)\$([a-zA-Z0-9_\\{}\[\]()+=-]+)\$(?!\$)"
         matches = re.finditer(pattern, text)
         for match in matches:
             latex = match.group(1).strip()
-            if latex and len(latex) > 1:
+            if latex and len(latex) > 1 and not latex.isdigit():
                 blocks.append(
                     {
                         "type": "inline",
