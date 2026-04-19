@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QTextEdit
-from PyQt5.QtGui import QTextCursor
+from PyQt5.QtGui import QTextCursor, QImage, QPixmap
 import markdown
+from utils.latex_renderer import LaTeXRenderer
 
 
 class ResultViewer(QTextEdit):
@@ -59,8 +60,11 @@ class ResultViewer(QTextEdit):
 
     def _render_markdown(self):
         self.clear()
+
+        text_with_latex = LaTeXRenderer.replace_with_images(self._raw_text)
+
         html = markdown.markdown(
-            self._raw_text, extensions=["extra", "codehilite", "tables", "fenced_code"]
+            text_with_latex, extensions=["extra", "codehilite", "tables", "fenced_code"]
         )
         styled_html = self._wrap_with_styles(html)
         self.setHtml(styled_html)
@@ -145,11 +149,13 @@ class ResultViewer(QTextEdit):
         """
 
     def _extract_plain_text(self, text: str) -> str:
-        html = markdown.markdown(text, extensions=["fenced_code"])
+        text_with_latex = LaTeXRenderer.replace_with_images(text)
+        html = markdown.markdown(text_with_latex, extensions=["fenced_code"])
         import re
 
         html = re.sub(r"<pre[^>]*>.*?</pre>", "", html, flags=re.DOTALL)
         html = re.sub(r"<code[^>]*>.*?</code>", "", html, flags=re.DOTALL)
+        html = re.sub(r"<img[^>]*>", "", html)
         html = re.sub(r"<[^>]+>", "", html)
         html = re.sub(r"&nbsp;", " ", html)
         html = re.sub(r"&amp;", "&", html)
